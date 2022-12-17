@@ -48,6 +48,8 @@ class User:
         self.server_process.bind((self.host_server, 0))
         self.server_process.listen(10)
 
+        self.button_list = []
+
     def serverConnect(self, serverAdress):
         self.host_client = serverAdress
         try:
@@ -99,6 +101,14 @@ class User:
         else: pass
     def process(self, strList):
         return json.loads(strList)
+    def filenameProcess(self, directory):
+        point = directory.find(".")
+        index = 0
+        while directory[index]!="/":
+            index-=1
+        filename = directory[index+1:point]
+        extension = directory[point:len(directory)]
+        return filename,extension
     def updateFriendlist(self):
         global friendList
         print("UpdateList")
@@ -107,15 +117,25 @@ class User:
         self.client_process.sendall(('Received').encode(FORMAT))
         print("endCheck")
         count = 0
+        
+        for button in self.button_list:
+            button.place(relwidth =0, relheight = 0)
+        self.button_list = []
+        sendMessBut.config(state=DISABLED)
+        sendFileBut.config(state=DISABLED)
+        
+
         for friend in friendList:
             if friend["name"] != self.userName and friend["isAct"]==1:
                 print(f"{friend['name']} is here, enter {index} to chat") 
                 butt= Button(friendsFrame, text=friend["name"])
                 butt.config(bg=COLOR_4, fg=COLOR_1, command=lambda name=butt.cget('text'):  self.changeFriendHandle(name))
                 butt.place(relheight=0.05, relwidth=0.9, relx=0.05, rely=0.2+count*0.1)
+                self.button_list.append(butt)
                 count+=1
             elif friend["name"]==self.userName: userID=index
             index += 1
+        
         return userID  
     def refreshFriendList(self):
         self.client_process.sendall("-1".encode(FORMAT))
@@ -148,30 +168,34 @@ class User:
                 mess = self.recv(channel, client)
                 self.send(channel, client, "Received")
             elif (mess == "sendfile"):
-                filename = self.recv(channel, client)
+                filename, extension= self.filenameProcess(channel.recv(1024).decode(FORMAT))
+                print(filename,"+",extension)
                 self.send(channel, client, "Received")
                 
                 agree = messagebox.askyesno(f"{current_friend} is here", "A file is sent to you, saved file ?")
                 
-                if agree:
-                    file = filedialog.asksaveasfile(mode='w', defaultextension=".txt")
-                    datacome = ""
-                    filedata = ""
-                    while (datacome!="endsend"):
-                        print("begin receive")
-                        datacome =  self.recv(channel, client)
-                        #print(datacome ," ", type(datacome))
+                
+                datacome = ""
+                filedata = bytearray()
+                while (datacome!="endsend"):
+                    # print("begin receive")
+                    datacome =  channel.recv(1024)
+                    #print(datacome ," ", type(datacome))
 
-                        if ("endsend" in datacome):
-                            print("end receive")
-                            self.send(channel, client, "Received")
-                            break
-                        if ("endsend" not in datacome): 
-                            filedata = filedata + datacome
-                            self.send(channel, client, "Received")
+                    if ("endsend".encode(FORMAT) in datacome):
+                        print("end receive")
+                        self.send(channel, client, "Received")
+                        break
+                    if ("endsend".encode(FORMAT) not in datacome): 
+                        filedata = b"".join([filedata, datacome])
+                        self.send(channel, client, "Received")
+                if agree:
+                    file = filedialog.asksaveasfile(mode='wb', defaultextension=".txt", filetypes=[('Original', extension),('Others','*.*'),])
                     file.write(filedata)
                     file.close()
-                mess = "A file is sent too you"
+                    mess = "A file is sent to you"
+                else: 
+                    mess = "A file is sent to you, but you didn't save it"
 
             if (mess!="out"):
                 if current_friend==connect_friend:
@@ -237,7 +261,7 @@ class User:
         self.chat_process.recv(1024).decode(FORMAT)
     def sendFile(self):
         filename = filedialog.askopenfilename(initialdir="d:/", title="Select a File", filetypes=(("text file","*.txt"),("all files","*.*")))
-        file = open(filename, "r")
+        file = open(filename, "rb")
         filedata = file.read()
         file.close()
 
@@ -245,7 +269,7 @@ class User:
         self.chat_process.recv(1024).decode(FORMAT)
         self.chat_process.sendall(filename.encode(FORMAT))
         self.chat_process.recv(1024).decode(FORMAT)
-        self.chat_process.sendall(filedata.encode(FORMAT))
+        self.chat_process.sendall(filedata)
         self.chat_process.recv(1024).decode(FORMAT)
         self.chat_process.sendall("endsend".encode(FORMAT))
         self.chat_process.recv(1024).decode(FORMAT)
@@ -371,7 +395,11 @@ if __name__=="__main__":
     refreshButt = Button(friendsFrame, text="Refresh")
     # Display Message Frame
     waitBox = Text(displayFrame)
+    waitBar = Scrollbar(displayFrame)
+    
     messBox = Text(displayFrame)
+    messBar = Scrollbar(displayFrame)
+
     notifLabel= Label(displayFrame,  text="Notification")
     friendLabel = Label(displayFrame, text="NULL")
     # Message Frame
@@ -387,7 +415,11 @@ if __name__=="__main__":
     refreshButt.config(bg=COLOR_4, fg=COLOR_1, command=lambda: user.refreshHandle())
 
     messBox.config(bg=COLOR_4, fg=COLOR_1, state=DISABLED)
+    messBar.config(command=messBox.yview)
+
     waitBox.config(bg=COLOR_4, fg=COLOR_1, state=DISABLED)
+    waitBar.config(command=waitBox.yview)
+
     notifLabel.config(bg=COLOR_1, fg=COLOR_4)
     friendLabel.config(bg=COLOR_1, fg=COLOR_4)
 
@@ -403,7 +435,11 @@ if __name__=="__main__":
     refreshButt.place(relwidth=0.9,relx=0.05, rely=0.9)
     
     waitBox.place(relwidth=1, relheight=0.5, rely=0)
+    waitBar.place(relwidth=0.03, relheight = 0.5, relx=0.97)
+    
     messBox.place(relwidth=1, relheight=0.5, rely=0.5)
+    messBar.place(relwidth=0.03, relheight= 0.5, relx=0.97, rely=0.5)
+
     notifLabel.place(relwidth=0.2, relheight=0.05, relx=0.8)
     friendLabel.place(relwidth=0.2, relheight=0.05, relx=0.8, rely=0.5)
     
